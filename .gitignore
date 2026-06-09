@@ -1,0 +1,11 @@
+node_modules/
+cache/
+artifacts/
+typechain-types/
+coverage/
+coverage.json
+crytic-export/
+echidna-corpus/
+gas-report.txt
+*.bin
+.env

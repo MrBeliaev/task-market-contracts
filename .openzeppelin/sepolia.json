@@ -1,0 +1,276 @@
+{
+  "manifestVersion": "3.2",
+  "proxies": [
+    {
+      "address": "0xeb605C381323597825999ed48595A4CFCccBbaA0",
+      "txHash": "0xf547090e9c181ad24e9a712be151c3488414ebfd0669a5a80dc010b98ad345ce",
+      "kind": "uups"
+    }
+  ],
+  "impls": {
+    "46b87b698c55e2621a897f083650484cc132a40c7f60740f42fccc515fb885d5": {
+      "address": "0xF9c93da793BB6E3BD1748F74D5c2848da9F537E5",
+      "txHash": "0xa2e68d0885af9cedd37347c458c0a7a28ba891d980dfdae71ba5b8f742028962",
+      "layout": {
+        "solcVersion": "0.8.24",
+        "storage": [
+          {
+            "label": "taskCount",
+            "offset": 0,
+            "slot": "0",
+            "type": "t_uint256",
+            "contract": "TaskMarket",
+            "src": "project/contracts/TaskMarket.sol:13"
+          },
+          {
+            "label": "pendingFees",
+            "offset": 0,
+            "slot": "1",
+            "type": "t_uint256",
+            "contract": "TaskMarket",
+            "src": "project/contracts/TaskMarket.sol:14"
+          },
+          {
+            "label": "feeRecipient",
+            "offset": 0,
+            "slot": "2",
+            "type": "t_address",
+            "contract": "TaskMarket",
+            "src": "project/contracts/TaskMarket.sol:15"
+          },
+          {
+            "label": "platformFeeBps",
+            "offset": 20,
+            "slot": "2",
+            "type": "t_uint16",
+            "contract": "TaskMarket",
+            "src": "project/contracts/TaskMarket.sol:16"
+          },
+          {
+            "label": "tasks",
+            "offset": 0,
+            "slot": "3",
+            "type": "t_mapping(t_uint256,t_struct(Task)2289_storage)",
+            "contract": "TaskMarket",
+            "src": "project/contracts/TaskMarket.sol:18"
+          },
+          {
+            "label": "pendingWithdrawals",
+            "offset": 0,
+            "slot": "4",
+            "type": "t_mapping(t_address,t_uint256)",
+            "contract": "TaskMarket",
+            "src": "project/contracts/TaskMarket.sol:19"
+          }
+        ],
+        "types": {
+          "t_address": {
+            "label": "address",
+            "numberOfBytes": "20"
+          },
+          "t_bool": {
+            "label": "bool",
+            "numberOfBytes": "1"
+          },
+          "t_bytes32": {
+            "label": "bytes32",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_address,t_bool)": {
+            "label": "mapping(address => bool)",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_bytes32,t_struct(RoleData)24_storage)": {
+            "label": "mapping(bytes32 => struct AccessControlUpgradeable.RoleData)",
+            "numberOfBytes": "32"
+          },
+          "t_struct(AccessControlStorage)34_storage": {
+            "label": "struct AccessControlUpgradeable.AccessControlStorage",
+            "members": [
+              {
+                "label": "_roles",
+                "type": "t_mapping(t_bytes32,t_struct(RoleData)24_storage)",
+                "offset": 0,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(InitializableStorage)404_storage": {
+            "label": "struct Initializable.InitializableStorage",
+            "members": [
+              {
+                "label": "_initialized",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "_initializing",
+                "type": "t_bool",
+                "offset": 8,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(RoleData)24_storage": {
+            "label": "struct AccessControlUpgradeable.RoleData",
+            "members": [
+              {
+                "label": "hasRole",
+                "type": "t_mapping(t_address,t_bool)",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "adminRole",
+                "type": "t_bytes32",
+                "offset": 0,
+                "slot": "1"
+              }
+            ],
+            "numberOfBytes": "64"
+          },
+          "t_uint64": {
+            "label": "uint64",
+            "numberOfBytes": "8"
+          },
+          "t_enum(Status)2267": {
+            "label": "enum TaskMarket.Status",
+            "members": [
+              "Open",
+              "Assigned",
+              "InProgress",
+              "UnderReview",
+              "Completed",
+              "Disputed",
+              "Cancelled"
+            ],
+            "numberOfBytes": "1"
+          },
+          "t_mapping(t_address,t_uint256)": {
+            "label": "mapping(address => uint256)",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_uint256,t_struct(Task)2289_storage)": {
+            "label": "mapping(uint256 => struct TaskMarket.Task)",
+            "numberOfBytes": "32"
+          },
+          "t_struct(Task)2289_storage": {
+            "label": "struct TaskMarket.Task",
+            "members": [
+              {
+                "label": "id",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "client",
+                "type": "t_address",
+                "offset": 0,
+                "slot": "1"
+              },
+              {
+                "label": "reward",
+                "type": "t_uint96",
+                "offset": 20,
+                "slot": "1"
+              },
+              {
+                "label": "executor",
+                "type": "t_address",
+                "offset": 0,
+                "slot": "2"
+              },
+              {
+                "label": "status",
+                "type": "t_enum(Status)2267",
+                "offset": 20,
+                "slot": "2"
+              },
+              {
+                "label": "clientConfirmed",
+                "type": "t_bool",
+                "offset": 21,
+                "slot": "2"
+              },
+              {
+                "label": "executorConfirmed",
+                "type": "t_bool",
+                "offset": 22,
+                "slot": "2"
+              },
+              {
+                "label": "deadline",
+                "type": "t_uint32",
+                "offset": 23,
+                "slot": "2"
+              },
+              {
+                "label": "createdAt",
+                "type": "t_uint32",
+                "offset": 27,
+                "slot": "2"
+              },
+              {
+                "label": "metadataHash",
+                "type": "t_bytes32",
+                "offset": 0,
+                "slot": "3"
+              }
+            ],
+            "numberOfBytes": "128"
+          },
+          "t_uint16": {
+            "label": "uint16",
+            "numberOfBytes": "2"
+          },
+          "t_uint256": {
+            "label": "uint256",
+            "numberOfBytes": "32"
+          },
+          "t_uint32": {
+            "label": "uint32",
+            "numberOfBytes": "4"
+          },
+          "t_uint96": {
+            "label": "uint96",
+            "numberOfBytes": "12"
+          }
+        },
+        "namespaces": {
+          "erc7201:openzeppelin.storage.AccessControl": [
+            {
+              "contract": "AccessControlUpgradeable",
+              "label": "_roles",
+              "type": "t_mapping(t_bytes32,t_struct(RoleData)24_storage)",
+              "src": "npm/@openzeppelin/contracts-upgradeable@5.6.1/access/AccessControlUpgradeable.sol:61",
+              "offset": 0,
+              "slot": "0"
+            }
+          ],
+          "erc7201:openzeppelin.storage.Initializable": [
+            {
+              "contract": "Initializable",
+              "label": "_initialized",
+              "type": "t_uint64",
+              "src": "npm/@openzeppelin/contracts@5.6.1/proxy/utils/Initializable.sol:69",
+              "offset": 0,
+              "slot": "0"
+            },
+            {
+              "contract": "Initializable",
+              "label": "_initializing",
+              "type": "t_bool",
+              "src": "npm/@openzeppelin/contracts@5.6.1/proxy/utils/Initializable.sol:73",
+              "offset": 8,
+              "slot": "0"
+            }
+          ]
+        }
+      }
+    }
+  }
+}
