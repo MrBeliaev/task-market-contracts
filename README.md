@@ -6,9 +6,9 @@ The contract is **upgradeable** — deployed behind a UUPS (ERC-1967) proxy, so 
 
 ## Stack
 
-- Solidity 0.8.24 (EVM target: Cancun)
+- Solidity 0.8.24 (EVM target: Paris)
 - Hardhat 3 + TypeScript (ESM)
-- OpenZeppelin Contracts v5 (`-upgradeable`: AccessControl, UUPS, Initializable; `ReentrancyGuardTransient` from the base package — stateless, transient-storage based)
+- OpenZeppelin Contracts v5 (`-upgradeable`: AccessControl, UUPS, Initializable; `ReentrancyGuard` from the base package — ERC-7201 namespaced storage)
 - `@openzeppelin/hardhat-upgrades` for proxy deployment, upgrades and storage-layout validation
 - TypeChain for typed contract bindings
 
@@ -17,8 +17,8 @@ The contract is **upgradeable** — deployed behind a UUPS (ERC-1967) proxy, so 
 ```bash
 npm install
 npx hardhat compile
-npx hardhat test        # 67 tests
-npx hardhat test --coverage   # 100% line/statement coverage
+npx hardhat test             # 91 tests, 100% line/statement coverage
+npx hardhat test --gas-stats # same + per-function gas breakdown
 ```
 
 ## Deploy
@@ -38,6 +38,7 @@ npx hardhat run scripts/deploy.ts --network sepolia
 ```
 SEPOLIA_RPC_URL=https://...
 DEPLOYER_PRIVATE_KEY=0x...
+ETHERSCAN_API_KEY=...
 ```
 
 ## Upgrading
@@ -88,16 +89,16 @@ Roles are managed via OpenZeppelin `AccessControl` (`grantRole` / `revokeRole`).
 | `assignExecutor(taskId, executor)` | Assign executor to open task |
 | `cancelTask(taskId)` | Cancel open task, refund ETH |
 | `confirmCompletion(taskId)` | Confirm work is done (both parties must confirm) |
-| `raiseDispute(taskId)` | Raise dispute on task under review |
+| `raiseDispute(taskId)` | Raise dispute on `UnderReview` task, or on expired `InProgress` task |
 
 ### Executor / Dispute Participant
 
 | Function | Description |
 |----------|-------------|
-| `startWork(taskId)` | Mark task as in progress |
+| `startWork(taskId)` | Mark task as in progress (reverts if deadline passed) |
 | `submitWork(taskId)` | Submit work for review (reverts if deadline passed) |
 | `confirmCompletion(taskId)` | Confirm completion (triggers payout credit when both confirmed) |
-| `raiseDispute(taskId)` | Raise dispute on task under review |
+| `raiseDispute(taskId)` | Raise dispute on `UnderReview` task, or on expired `InProgress` task |
 | `withdraw()` | Pull pending payout from `pendingWithdrawals` (pull-payment pattern) |
 
 ### Admin (`ADMIN_ROLE`)
@@ -130,7 +131,7 @@ The `Task` struct is packed into 4 EVM slots (down from 8 unpacked):
 Slot 1  id                              uint256 (32 B)
 Slot 2  client (20 B) + reward (12 B)   address + uint96
 Slot 3  executor (20 B) + status (1 B) + clientConfirmed (1 B)
-        + executorConfirmed (1 B) + deadline (4 B) + createdAt (4 B)
+        + executorConfirmed (1 B) + feeBps (2 B) + deadline (4 B)
 Slot 4  metadataHash                    bytes32 (32 B)
 ```
 
@@ -144,7 +145,7 @@ Key properties:
 - Custom errors throughout for gas-efficient reverts
 - `inStatus` modifier enforces valid state transitions
 - Pull-payment pattern for executor/dispute payouts — no push-transfer failure can lock a task
-- Deadline enforced in `submitWork`; admin cannot resolve a dispute they participate in
+- Deadline enforced on both `startWork` and `submitWork`; admin cannot resolve a dispute they participate in
 - Implementation contract is locked via `_disableInitializers()` in its constructor — only the proxy can be initialized
 - Upgrades are gated behind `_authorizeUpgrade` with `onlyRole(DEFAULT_ADMIN_ROLE)`
 - `DEFAULT_ADMIN_ROLE` cannot be renounced (override blocks it); transfer to a new account is still possible

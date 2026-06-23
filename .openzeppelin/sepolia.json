@@ -2,15 +2,15 @@
   "manifestVersion": "3.2",
   "proxies": [
     {
-      "address": "0xeb605C381323597825999ed48595A4CFCccBbaA0",
-      "txHash": "0xf547090e9c181ad24e9a712be151c3488414ebfd0669a5a80dc010b98ad345ce",
+      "address": "0x84c68038f4524C84ECF7c0EB3CF0bceD3ADCB152",
+      "txHash": "0x99bea95a89b7c12724d35d4a28d47022864eb4a488deaf490695f26085f03363",
       "kind": "uups"
     }
   ],
   "impls": {
-    "46b87b698c55e2621a897f083650484cc132a40c7f60740f42fccc515fb885d5": {
-      "address": "0xF9c93da793BB6E3BD1748F74D5c2848da9F537E5",
-      "txHash": "0xa2e68d0885af9cedd37347c458c0a7a28ba891d980dfdae71ba5b8f742028962",
+    "1bca120273b2a37a4ee6d2970112fbdcd1fdae4894143d8a34250d63c3337d1e": {
+      "address": "0xf9281854589Caef4b8dfbdcf62E5865Fb8c97d8D",
+      "txHash": "0xe5438021f9e924755c38d5f714f4f425045673dffc8d74ecb51564fb1aa03612",
       "layout": {
         "solcVersion": "0.8.24",
         "storage": [
@@ -20,7 +20,7 @@
             "slot": "0",
             "type": "t_uint256",
             "contract": "TaskMarket",
-            "src": "project/contracts/TaskMarket.sol:13"
+            "src": "project/contracts/TaskMarket.sol:15"
           },
           {
             "label": "pendingFees",
@@ -28,7 +28,7 @@
             "slot": "1",
             "type": "t_uint256",
             "contract": "TaskMarket",
-            "src": "project/contracts/TaskMarket.sol:14"
+            "src": "project/contracts/TaskMarket.sol:16"
           },
           {
             "label": "feeRecipient",
@@ -36,7 +36,7 @@
             "slot": "2",
             "type": "t_address",
             "contract": "TaskMarket",
-            "src": "project/contracts/TaskMarket.sol:15"
+            "src": "project/contracts/TaskMarket.sol:17"
           },
           {
             "label": "platformFeeBps",
@@ -44,15 +44,15 @@
             "slot": "2",
             "type": "t_uint16",
             "contract": "TaskMarket",
-            "src": "project/contracts/TaskMarket.sol:16"
+            "src": "project/contracts/TaskMarket.sol:18"
           },
           {
             "label": "tasks",
             "offset": 0,
             "slot": "3",
-            "type": "t_mapping(t_uint256,t_struct(Task)2289_storage)",
+            "type": "t_mapping(t_uint256,t_struct(Task)2292_storage)",
             "contract": "TaskMarket",
-            "src": "project/contracts/TaskMarket.sol:18"
+            "src": "project/contracts/TaskMarket.sol:20"
           },
           {
             "label": "pendingWithdrawals",
@@ -60,7 +60,7 @@
             "slot": "4",
             "type": "t_mapping(t_address,t_uint256)",
             "contract": "TaskMarket",
-            "src": "project/contracts/TaskMarket.sol:19"
+            "src": "project/contracts/TaskMarket.sol:21"
           }
         ],
         "types": {
@@ -136,7 +136,7 @@
             "label": "uint64",
             "numberOfBytes": "8"
           },
-          "t_enum(Status)2267": {
+          "t_enum(Status)2270": {
             "label": "enum TaskMarket.Status",
             "members": [
               "Open",
@@ -153,11 +153,11 @@
             "label": "mapping(address => uint256)",
             "numberOfBytes": "32"
           },
-          "t_mapping(t_uint256,t_struct(Task)2289_storage)": {
+          "t_mapping(t_uint256,t_struct(Task)2292_storage)": {
             "label": "mapping(uint256 => struct TaskMarket.Task)",
             "numberOfBytes": "32"
           },
-          "t_struct(Task)2289_storage": {
+          "t_struct(Task)2292_storage": {
             "label": "struct TaskMarket.Task",
             "members": [
               {
@@ -186,7 +186,7 @@
               },
               {
                 "label": "status",
-                "type": "t_enum(Status)2267",
+                "type": "t_enum(Status)2270",
                 "offset": 20,
                 "slot": "2"
               },
@@ -203,15 +203,15 @@
                 "slot": "2"
               },
               {
-                "label": "deadline",
-                "type": "t_uint32",
+                "label": "feeBps",
+                "type": "t_uint16",
                 "offset": 23,
                 "slot": "2"
               },
               {
-                "label": "createdAt",
+                "label": "deadline",
                 "type": "t_uint32",
-                "offset": 27,
+                "offset": 25,
                 "slot": "2"
               },
               {

@@ -4,8 +4,8 @@
 **Architecture**: Upgradeable — UUPS proxy (ERC-1967), implementation behind `@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol`
 **Solidity**: 0.8.24 (EVM target: Paris — EIP-1153 not required)
 **Dependencies**: OpenZeppelin Contracts v5 (`-upgradeable`: AccessControl, UUPS, Initializable; `ReentrancyGuard` — ERC-7201 namespaced storage)
-**Date**: 2026-06-08
-**Tests**: 65 passing (100% line & statement coverage) · Bytecode: 10 229 bytes
+**Date**: 2026-06-22
+**Tests**: 91 passing (100% line & statement coverage) · Bytecode: 10 999 bytes
 
 ---
 
@@ -13,15 +13,23 @@
 
 | Severity      | Total | Open | Acknowledged |
 | ------------- | ----- | ---- | ------------ |
-| Informational | 2     | 0    | 2            |
+| Informational | 3     | 0    | 3            |
 
-No High or Medium severity findings remain open.
+No High, Medium, or Low severity findings.
 
 ---
 
 ## Findings
 
-### [I-1] No upper bound on pending fee accumulation
+### [I-1] `DeadlineNotExpired` error reused for terminal-status cancellation attempts
+
+When `cancelTask` is called on a task in `Completed`, `Cancelled`, `UnderReview`, or `Disputed` status, the revert reason is `DeadlineNotExpired`. For non-expired active tasks (`Assigned`/`InProgress`) this wording is accurate; for terminal statuses it is slightly misleading — `InvalidStatus` would be more precise.
+
+**Status**: Acknowledged. Changing the error selector would bump the ABI and break existing integrations; the semantics are unambiguous enough for the affected edge cases (clients attempting to cancel an already-finalised task).
+
+---
+
+### [I-2] No upper bound on pending fee accumulation
 
 `pendingFees` grows unboundedly when `withdrawPendingFees` is not called regularly. There is no on-chain cap.
 
@@ -29,7 +37,7 @@ No High or Medium severity findings remain open.
 
 ---
 
-### [I-2] No mechanism to recover ETH sent directly to the contract
+### [I-3] No mechanism to recover ETH sent directly to the contract
 
 The contract has no `receive()` or fallback — direct ETH transfers revert. This is the correct and intended behavior.
 
@@ -39,37 +47,38 @@ The contract has no `receive()` or fallback — direct ETH transfers revert. Thi
 
 ## Gas Report
 
-Source: `npx hardhat test --gas-stats` — Hardhat 3 built-in statistics across all 65 test calls.  
+Source: `npx hardhat test --gas-stats` — Hardhat 3 built-in statistics across all 91 test calls.
 Environment: Hardhat EDR (in-process EVM), `evmVersion: "paris"`, optimizer 200 runs.
 
-**Deployment** — gas: **2 311 779** · bytecode: **10 229 bytes** (via ERC1967Proxy)
+**Deployment** — gas: **2 478 142** · bytecode: **10 999 bytes** (via ERC1967Proxy)
 
-| Function             | Min    | Avg    | Median | Max     | Calls |
-| -------------------- | ------ | ------ | ------ | ------- | ----- |
-| `createTask`         | 124084 | 138954 | 141184 | 141184  | 46    |
-| `assignExecutor`     | 37991  | 37991  | 37991  | 37991   | 38    |
-| `startWork`          | 33965  | 33965  | 33965  | 33965   | 35    |
-| `submitWork`         | 34119  | 34119  | 34119  | 34119   | 34    |
-| `confirmCompletion`  | 59033  | 72331  | 59045  | 91065   | 20    |
-| `raiseDispute`       | 37443  | 37468  | 37443  | 37580   | 11    |
-| `resolveDispute`     | 86115  | 97749  | 98585  | 108535  | 6     |
-| `withdraw`           | 37477  | 37477  | 37477  | 37477   | 7     |
-| `withdrawPendingFees`| 40425  | 43603  | 40425  | 53138   | 4     |
-| `cancelTask`         | 46716  | 56666  | 56666  | 66616   | 2     |
-| `forceComplete`      | 73089  | 91589  | 91589  | 110089  | 2     |
-| `setFeeBps`          | 35366  | 35382  | 35390  | 35390   | 3     |
-| `setFeeRecipient`    | 35759  | 35769  | 35771  | 35771   | 5     |
-| `grantRole`          | 56175  | 56482  | 56559  | 56559   | 5     |
-| `revokeRole`         | 32210  | 33402  | 33402  | 34594   | 2     |
-| `hasRole`            | 29188  | 29401  | 29572  | 29572   | 9     |
-| `getTask`            | 38479  | 38479  | 38479  | 38479   | 17    |
-| `upgradeToAndCall`   | 37945  | 37945  | 37945  | 37945   | 1     |
+| Function             | Min     | Avg     | Median  | Max     | Calls |
+| -------------------- | ------- | ------- | ------- | ------- | ----- |
+| `createTask`         | 126 313 | 142 659 | 143 413 | 143 413 | 68    |
+| `assignExecutor`     | 37 991  | 37 991  | 37 991  | 37 991  | 55    |
+| `startWork`          | 34 119  | 34 119  | 34 119  | 34 119  | 45    |
+| `submitWork`         | 34 052  | 34 052  | 34 052  | 34 052  | 36    |
+| `confirmCompletion`  | 59 033  | 71 382  | 59 045  | 88 955  | 20    |
+| `raiseDispute`       | 37 364  | 37 435  | 37 364  | 37 648  | 14    |
+| `resolveDispute`     | 108 909 | 122 366 | 131 329 | 131 329 | 5     |
+| `cancelTask`         | 82 031  | 82 075  | 82 092  | 82 129  | 5     |
+| `withdraw`           | 37 499  | 37 499  | 37 499  | 37 499  | 7     |
+| `withdrawPendingFees`| 40 447  | 44 685  | 40 447  | 53 160  | 3     |
+| `forceComplete`      | 107 979 | 107 979 | 107 979 | 107 979 | 1     |
+| `setFeeBps`          | 35 366  | 35 378  | 35 378  | 35 390  | 2     |
+| `setFeeRecipient`    | 35 793  | 35 793  | 35 793  | 35 793  | 4     |
+| `grantRole`          | 56 197  | 56 504  | 56 581  | 56 581  | 5     |
+| `revokeRole`         | 32 232  | 33 424  | 33 424  | 34 616  | 2     |
+| `hasRole`            | 29 188  | 29 401  | 29 572  | 29 572  | 9     |
+| `getTask`            | 38 479  | 38 479  | 38 479  | 38 479  | 25    |
+| `upgradeToAndCall`   | 37 967  | 37 967  | 37 967  | 37 967  | 1     |
 
 **Notes**:
-- `confirmCompletion` max (91 065) is the second confirmation that triggers `_releaseFunds` — writes `pendingFees` and `pendingWithdrawals`
-- `forceComplete` max (110 089) covers the `Disputed → Completed` path (extra storage read vs `UnderReview`)
-- `cancelTask` max (66 616) occurs on warm storage; min (46 716) on cold
+- `confirmCompletion` max (88 955) is the second confirmation triggering `_releaseFunds` — writes `pendingFees` and `pendingWithdrawals`
+- `forceComplete` (107 979) covers the admin-forced `UnderReview → Completed` path
+- `cancelTask` variance is warm vs. cold storage access patterns
 - `resolveDispute` range reflects variable `pendingWithdrawals` write patterns (zero → non-zero vs non-zero → non-zero)
+- `startWork` deadline check (`task.deadline` SLOAD) costs zero extra gas: `deadline` shares slot 2 with `status`, which is already read warm by the `inStatus` modifier
 - **Struct packing savings**: `Task` in 4 slots instead of 8 → ~80 000 gas saved per `createTask` vs unpacked layout
 
 ---
@@ -87,7 +96,7 @@ The contract is deployed behind a UUPS-upgradeable proxy (`Initializable` + `Acc
 | No unsafe opcodes (`selfdestruct`, untrusted `delegatecall`) | ✅     | None present; `@openzeppelin/hardhat-upgrades` validation passes                                                                                                                                                                                                                                                                                                     |
 | Storage-layout compatibility tooling                         | ✅     | `@openzeppelin/hardhat-upgrades` validates layout on every `deployProxy`/`upgradeProxy`/`compile` call                                                                                                                                                                                                                                                               |
 | Reentrancy guard storage-safety                              | ✅     | `ReentrancyGuard` (OZ v5) uses ERC-7201 namespaced storage at a deterministic slot — no collision with sequential state; initial slot value `0` is safe (guard checks `== ENTERED(2)`, not `!= NOT_ENTERED(1)`); `unsafeAllow: ["constructor"]` passed to `deployProxy`/`upgradeProxy` since OZ's plugin flag is not automatically suppressed by `@custom:stateless` |
-| Sequential storage append-only                               | ✅     | Own state (`taskCount`, `pendingFees`, `feeRecipient`, `platformFeeBps`, `tasks`, `pendingWithdrawals`) uses sequential slots 0–4; `AccessControlUpgradeable`/`Initializable` use ERC-7201 namespaced storage and do not collide; `pendingWithdrawals` appended as slot 4                                                                                            |
+| Sequential storage append-only                               | ✅     | Own state (`taskCount`, `pendingFees`, `feeRecipient`, `platformFeeBps`, `tasks`, `pendingWithdrawals`) uses sequential slots 0–4; `AccessControlUpgradeable`/`Initializable` use ERC-7201 namespaced storage and do not collide                                                                                                                                      |
 
 ---
 
@@ -104,8 +113,6 @@ Slither v0.10.x · `--filter-paths node_modules`
 | `low-level-calls`    | Info     | `.call{value}()` in `_transfer` and `withdrawPendingFees`        | Expected ETH transfer pattern; return value checked, reverts on failure                                                                                        |
 | `naming-convention`  | Info     | Parameters use `_camelCase` prefix                               | Style choice — avoids parameter shadowing of state variables                                                                                                   |
 
-**Previously resolved**: `reentrancy-eth` — eliminated by removing the push-fee transfer from `_releaseFunds`; fees now always accumulate in `pendingFees` (pure pull-payment). `events-maths` — resolved by emitting `FeeBpsUpdated` and `FeeRecipientUpdated` in `initialize`.
-
 ---
 
 ## Mythril Symbolic Execution
@@ -119,7 +126,7 @@ Slither v0.10.x · `--filter-paths node_modules`
 | SWC-101 | High     | `0x471da0b1` → `createTask` | Potential integer underflow at PC 3026     | **False positive** — Solidity 0.8.x reverts on overflow/underflow; no `unchecked` blocks in contract code |
 | SWC-116 | Low      | `0x471da0b1` → `createTask` | Control flow depends on `block.timestamp`  | **Confirmed / accepted** — same as Slither `timestamp` finding; negligible miner window                   |
 
-**Conclusion**: No new vulnerabilities beyond accepted findings.
+**Conclusion**: No vulnerabilities beyond accepted findings.
 
 ---
 
@@ -145,14 +152,14 @@ Slither v0.10.x · `--filter-paths node_modules`
 
 ## Test Coverage
 
-**Tool**: Hardhat 3 built-in (EDR in-process EVM)  
+**Tool**: Hardhat 3 built-in (EDR in-process EVM)
 **Command**: `npx hardhat test`
 
 | File             | Tests | Line % | Statement % |
 | ---------------- | ----- | ------ | ----------- |
-| `TaskMarket.sol` | 65    | 100.00 | 100.00      |
+| `TaskMarket.sol` | 91    | 100.00 | 100.00      |
 
-65 tests passing across suites: Task Creation, Assignment, Lifecycle (incl. deadline enforcement on `submitWork`), Multi-Sig Completion, Cancellation, Disputes, Admin Functions, Pending Fees, Edge Cases, Multi-Admin (incl. conflict-of-interest guard, role renouncement protection), `getTask` bounds validation, Withdraw pull-payment, Upgradeability (UUPS).
+91 tests passing across suites: Task Creation, Assignment, Lifecycle (deadline enforcement on `startWork` and `submitWork`), Multi-Sig Completion, Cancellation, Disputes (incl. expired InProgress), Admin Functions, Pending Fees, Edge Cases, Multi-Admin (incl. conflict-of-interest guard, role renouncement protection), `getTask` bounds validation, Withdraw pull-payment, Upgradeability (UUPS), cancelTask expired active tasks, extendDeadline, raiseDispute from expired InProgress.
 
 ---
 
@@ -171,7 +178,8 @@ Slither v0.10.x · `--filter-paths node_modules`
 | Pure pull-payment for executor/dispute payouts via `withdraw()`                              | ✅     |
 | Admin cannot resolve dispute they participate in (`AdminIsParticipant`)                      | ✅     |
 | `DEFAULT_ADMIN_ROLE` cannot be renounced (`CannotRenounceAdminRole`)                         | ✅     |
-| Deadline enforced on `submitWork`                                                            | ✅     |
+| Deadline enforced on both `startWork` and `submitWork`                                       | ✅     |
+| Deadline cap (`MAX_DEADLINE_EXTENSION = 730 days`) applied uniformly on create and extend    | ✅     |
 | Multi-admin support via AccessControl                                                        | ✅     |
 | EIP-165 support via inherited `supportsInterface`                                            | ✅     |
 | UUPS upgrade gated by `onlyRole(DEFAULT_ADMIN_ROLE)` + 48-hour `TimelockController`          | ✅     |
@@ -179,6 +187,8 @@ Slither v0.10.x · `--filter-paths node_modules`
 | Storage-layout validated by `@openzeppelin/hardhat-upgrades` on every build/deploy/upgrade   | ✅     |
 | On-chain admin check via `hasRole` — no off-chain whitelist bypass possible                  | ✅     |
 | Initial `feeBps` and `feeRecipient` values emitted via events in `initialize`                | ✅     |
+| `feeBps` snapshot captured at task creation — executor protected from platform fee changes   | ✅     |
+| Executor protected against expired-InProgress cancellation via `raiseDispute`                | ✅     |
 
 ---
 
@@ -187,7 +197,7 @@ Slither v0.10.x · `--filter-paths node_modules`
 | Tool                         | Version    | Result                                                       |
 | ---------------------------- | ---------- | ------------------------------------------------------------ |
 | Slither (static analysis)    | 0.10.x     | 4 findings on contract code — all accepted or informational  |
-| Hardhat tests                | Hardhat 3  | 65 / 65 passing · 100% line & statement coverage            |
+| Hardhat tests                | Hardhat 3  | 91 / 91 passing · 100% line & statement coverage            |
 | Mythril (symbolic execution) | 0.24.8     | 2 findings — SWC-101 false positive, SWC-116 accepted       |
 | Echidna (property fuzzing)   | 2.3.2      | All 6 invariants passing — 50 000 sequences                  |
-| Gas report (`--gas-stats`)   | Hardhat 3  | Min/Avg/Med/Max per function across all 65 test calls        |
+| Gas report (`--gas-stats`)   | Hardhat 3  | Min/Avg/Med/Max per function across all 91 test calls        |

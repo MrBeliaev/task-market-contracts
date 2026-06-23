@@ -123,6 +123,17 @@ describe("TaskMarket", function () {
         .to.be.revertedWithCustomError(taskMarket, "NotExecutor");
     });
 
+    it("should revert startWork if deadline has passed", async function () {
+      const snapshotId = (await provider.request({ method: "evm_snapshot", params: [] })) as string;
+      await provider.request({ method: "evm_increaseTime", params: [86401] });
+      await provider.request({ method: "evm_mine", params: [] });
+
+      await expect(taskMarket.connect(executor).startWork(1))
+        .to.be.revertedWithCustomError(taskMarket, "DeadlinePassed");
+
+      await provider.request({ method: "evm_revert", params: [snapshotId] });
+    });
+
     it("should revert submitWork if deadline has passed", async function () {
       await taskMarket.connect(executor).startWork(1);
 
@@ -180,18 +191,21 @@ describe("TaskMarket", function () {
   });
 
   describe("Cancellation", function () {
-    it("should refund client on cancellation", async function () {
+    it("should credit pendingWithdrawals on cancellation (pull-payment)", async function () {
       const deadline = Math.floor(Date.now() / 1000) + 86400;
       await taskMarket.connect(client).createTask(deadline, METADATA_HASH, { value: ONE_ETH });
 
+      await taskMarket.connect(client).cancelTask(1);
+      expect(await taskMarket.pendingWithdrawals(client.address)).to.equal(ONE_ETH);
+      expect((await taskMarket.getTask(1)).status).to.equal(6);
+
+      // client can then withdraw
       const balBefore = await ethers.provider.getBalance(client.address);
-      const tx = await taskMarket.connect(client).cancelTask(1);
+      const tx = await taskMarket.connect(client).withdraw();
       const receipt = await tx.wait();
       const gasUsed = BigInt(receipt!.gasUsed * receipt!.gasPrice);
       const balAfter = await ethers.provider.getBalance(client.address);
-
       expect(balAfter - balBefore + gasUsed).to.equal(ONE_ETH);
-      expect((await taskMarket.getTask(1)).status).to.equal(6);
     });
   });
 
@@ -239,8 +253,10 @@ describe("TaskMarket", function () {
       await taskMarket.connect(executor).raiseDispute(1);
       await taskMarket.connect(owner).resolveDispute(1, 6000);
 
-      const expectedClientRefund = (ONE_ETH * 6000n) / 10000n;
-      const expectedExecutorPayout = ONE_ETH - expectedClientRefund;
+      const fee = (ONE_ETH * FEE_BPS) / 10000n;
+      const remainder = ONE_ETH - fee;
+      const expectedClientRefund = (remainder * 6000n) / 10000n;
+      const expectedExecutorPayout = remainder - expectedClientRefund;
 
       expect(await taskMarket.pendingWithdrawals(client.address)).to.equal(expectedClientRefund);
       expect(await taskMarket.pendingWithdrawals(executor.address)).to.equal(expectedExecutorPayout);
@@ -320,10 +336,11 @@ describe("TaskMarket", function () {
       ).to.be.revertedWithCustomError(taskMarket, "RewardTooLarge");
     });
 
-    it("should reject deadline beyond uint32 max", async function () {
-      const tooFar = BigInt(2 ** 32);
+    it("should reject deadline beyond 2-year cap", async function () {
+      const block = await ethers.provider.getBlock("latest");
+      const threeYears = Number(block!.timestamp) + 3 * 365 * 86400;
       await expect(
-        taskMarket.connect(client).createTask(tooFar, METADATA_HASH, { value: ONE_ETH })
+        taskMarket.connect(client).createTask(threeYears, METADATA_HASH, { value: ONE_ETH })
       ).to.be.revertedWithCustomError(taskMarket, "DeadlineTooFar");
     });
   });
@@ -409,9 +426,9 @@ describe("TaskMarket", function () {
         .to.be.revertedWithCustomError(taskMarket, "ZeroAddress");
     });
 
-    it("should not allow cancellation after assignment", async function () {
+    it("should not allow cancellation in UnderReview (not expired)", async function () {
       await expect(taskMarket.connect(client).cancelTask(1))
-        .to.be.revertedWithCustomError(taskMarket, "InvalidStatus");
+        .to.be.revertedWithCustomError(taskMarket, "DeadlineNotExpired");
     });
 
     it("should not allow startWork if not Assigned", async function () {
@@ -481,7 +498,7 @@ describe("TaskMarket", function () {
         .to.be.revertedWithCustomError(taskMarket, "InvalidStatus");
     });
 
-    it("should revert with TransferFailed when refund recipient rejects ETH", async function () {
+    it("should credit pendingWithdrawals for contract client on cancel (pull-payment)", async function () {
       const RejectETH = await ethers.deployContract("RejectETH");
       const rejectAddress = await RejectETH.getAddress();
       const marketAddress = await taskMarket.getAddress();
@@ -492,8 +509,8 @@ describe("TaskMarket", function () {
       const newTaskId = await taskMarket.taskCount();
       expect((await taskMarket.getTask(newTaskId)).client).to.equal(rejectAddress);
 
-      await expect(RejectETH.connect(client).cancelTask(marketAddress, newTaskId))
-        .to.be.revertedWithCustomError(taskMarket, "TransferFailed");
+      await RejectETH.connect(client).cancelTask(marketAddress, newTaskId);
+      expect(await taskMarket.pendingWithdrawals(rejectAddress)).to.equal(ONE_ETH);
     });
 
     it("executor confirms first, then client triggers payout", async function () {
@@ -729,6 +746,302 @@ describe("TaskMarket", function () {
 
       await expect(implementation.initialize(FEE_BPS, owner.address))
         .to.be.revertedWithCustomError(implementation, "InvalidInitialization");
+    });
+  });
+
+  describe("cancelTask — expired active tasks", function () {
+    const DAY = 86400;
+    let snapshotId: string;
+
+    beforeEach(async function () {
+      snapshotId = (await provider.request({ method: "evm_snapshot", params: [] })) as string;
+    });
+
+    afterEach(async function () {
+      await provider.request({ method: "evm_revert", params: [snapshotId] });
+    });
+
+    async function blockDeadline(days = 1) {
+      const block = await ethers.provider.getBlock("latest");
+      return Number(block!.timestamp) + days * DAY + 60;
+    }
+
+    it("should cancel and credit pendingWithdrawals for an expired ASSIGNED task", async function () {
+      const deadline = await blockDeadline();
+      await taskMarket.connect(client).createTask(deadline, METADATA_HASH, { value: ONE_ETH });
+      await taskMarket.connect(client).assignExecutor(1, executor.address);
+
+      await provider.request({ method: "evm_increaseTime", params: [DAY + 120] });
+      await provider.request({ method: "evm_mine", params: [] });
+
+      await taskMarket.connect(client).cancelTask(1);
+      expect(await taskMarket.pendingWithdrawals(client.address)).to.equal(ONE_ETH);
+      expect((await taskMarket.getTask(1)).status).to.equal(6n); // Cancelled
+    });
+
+    it("should cancel and credit pendingWithdrawals for an expired IN_PROGRESS task", async function () {
+      const deadline = await blockDeadline();
+      await taskMarket.connect(client).createTask(deadline, METADATA_HASH, { value: ONE_ETH });
+      await taskMarket.connect(client).assignExecutor(1, executor.address);
+      await taskMarket.connect(executor).startWork(1);
+
+      await provider.request({ method: "evm_increaseTime", params: [DAY + 120] });
+      await provider.request({ method: "evm_mine", params: [] });
+
+      await taskMarket.connect(client).cancelTask(1);
+      expect(await taskMarket.pendingWithdrawals(client.address)).to.equal(ONE_ETH);
+      expect((await taskMarket.getTask(1)).status).to.equal(6n);
+    });
+
+    it("should emit TaskCancelled and TaskStatusChanged on expired ASSIGNED cancel", async function () {
+      const deadline = await blockDeadline();
+      await taskMarket.connect(client).createTask(deadline, METADATA_HASH, { value: ONE_ETH });
+      await taskMarket.connect(client).assignExecutor(1, executor.address);
+
+      await provider.request({ method: "evm_increaseTime", params: [DAY + 120] });
+      await provider.request({ method: "evm_mine", params: [] });
+
+      await expect(taskMarket.connect(client).cancelTask(1))
+        .to.emit(taskMarket, "TaskCancelled").withArgs(1)
+        .and.to.emit(taskMarket, "TaskStatusChanged").withArgs(1, 1n, 6n); // Assigned → Cancelled
+    });
+
+    it("should revert cancelTask on non-expired ASSIGNED task", async function () {
+      const deadline = await blockDeadline();
+      await taskMarket.connect(client).createTask(deadline, METADATA_HASH, { value: ONE_ETH });
+      await taskMarket.connect(client).assignExecutor(1, executor.address);
+
+      await expect(taskMarket.connect(client).cancelTask(1))
+        .to.be.revertedWithCustomError(taskMarket, "DeadlineNotExpired");
+    });
+
+    it("should revert cancelTask on non-expired IN_PROGRESS task", async function () {
+      const deadline = await blockDeadline();
+      await taskMarket.connect(client).createTask(deadline, METADATA_HASH, { value: ONE_ETH });
+      await taskMarket.connect(client).assignExecutor(1, executor.address);
+      await taskMarket.connect(executor).startWork(1);
+
+      await expect(taskMarket.connect(client).cancelTask(1))
+        .to.be.revertedWithCustomError(taskMarket, "DeadlineNotExpired");
+    });
+
+    it("should revert cancelTask from non-client on expired ASSIGNED task", async function () {
+      const deadline = await blockDeadline();
+      await taskMarket.connect(client).createTask(deadline, METADATA_HASH, { value: ONE_ETH });
+      await taskMarket.connect(client).assignExecutor(1, executor.address);
+
+      await provider.request({ method: "evm_increaseTime", params: [DAY + 120] });
+      await provider.request({ method: "evm_mine", params: [] });
+
+      await expect(taskMarket.connect(executor).cancelTask(1))
+        .to.be.revertedWithCustomError(taskMarket, "NotClient");
+    });
+
+    it("should revert cancelTask on UnderReview status even after deadline", async function () {
+      const deadline = await blockDeadline();
+      await taskMarket.connect(client).createTask(deadline, METADATA_HASH, { value: ONE_ETH });
+      await taskMarket.connect(client).assignExecutor(1, executor.address);
+      await taskMarket.connect(executor).startWork(1);
+      await taskMarket.connect(executor).submitWork(1); // transitions before deadline passes
+
+      await provider.request({ method: "evm_increaseTime", params: [DAY + 120] });
+      await provider.request({ method: "evm_mine", params: [] });
+
+      await expect(taskMarket.connect(client).cancelTask(1))
+        .to.be.revertedWithCustomError(taskMarket, "DeadlineNotExpired");
+    });
+  });
+
+  describe("extendDeadline", function () {
+    const DAY = 86400;
+    let snapshotId: string;
+    let deadline: number;
+
+    beforeEach(async function () {
+      snapshotId = (await provider.request({ method: "evm_snapshot", params: [] })) as string;
+      const block = await ethers.provider.getBlock("latest");
+      deadline = Number(block!.timestamp) + DAY + 60;
+      await taskMarket.connect(client).createTask(deadline, METADATA_HASH, { value: ONE_ETH });
+    });
+
+    afterEach(async function () {
+      await provider.request({ method: "evm_revert", params: [snapshotId] });
+    });
+
+    it("should extend deadline on an OPEN task and emit event", async function () {
+      const newDeadline = deadline + DAY;
+      await expect(taskMarket.connect(client).extendDeadline(1, newDeadline))
+        .to.emit(taskMarket, "DeadlineExtended")
+        .withArgs(1, deadline, newDeadline);
+      expect((await taskMarket.getTask(1)).deadline).to.equal(newDeadline);
+    });
+
+    it("should extend deadline on an ASSIGNED task", async function () {
+      await taskMarket.connect(client).assignExecutor(1, executor.address);
+      const newDeadline = deadline + DAY * 3;
+      await taskMarket.connect(client).extendDeadline(1, newDeadline);
+      expect((await taskMarket.getTask(1)).deadline).to.equal(newDeadline);
+    });
+
+    it("should extend deadline on an IN_PROGRESS task", async function () {
+      await taskMarket.connect(client).assignExecutor(1, executor.address);
+      await taskMarket.connect(executor).startWork(1);
+      const newDeadline = deadline + DAY * 2;
+      await taskMarket.connect(client).extendDeadline(1, newDeadline);
+      expect((await taskMarket.getTask(1)).deadline).to.equal(newDeadline);
+    });
+
+    it("should extend deadline on an UNDER_REVIEW task", async function () {
+      await taskMarket.connect(client).assignExecutor(1, executor.address);
+      await taskMarket.connect(executor).startWork(1);
+      await taskMarket.connect(executor).submitWork(1);
+      const newDeadline = deadline + DAY * 5;
+      await taskMarket.connect(client).extendDeadline(1, newDeadline);
+      expect((await taskMarket.getTask(1)).deadline).to.equal(newDeadline);
+    });
+
+    it("should revert if called by non-client", async function () {
+      await expect(taskMarket.connect(executor).extendDeadline(1, deadline + DAY))
+        .to.be.revertedWithCustomError(taskMarket, "NotClient");
+    });
+
+    it("should revert if new deadline equals current deadline", async function () {
+      await expect(taskMarket.connect(client).extendDeadline(1, deadline))
+        .to.be.revertedWithCustomError(taskMarket, "NewDeadlineTooEarly");
+    });
+
+    it("should revert if new deadline is before current deadline", async function () {
+      await expect(taskMarket.connect(client).extendDeadline(1, deadline - 1))
+        .to.be.revertedWithCustomError(taskMarket, "NewDeadlineTooEarly");
+    });
+
+    it("should revert if new deadline exceeds 2-year cap from current block", async function () {
+      const block = await ethers.provider.getBlock("latest");
+      // 3 years: clearly over the 2-year (730 days) MAX_DEADLINE_EXTENSION
+      const threeYears = Number(block!.timestamp) + 3 * 365 * DAY;
+      await expect(taskMarket.connect(client).extendDeadline(1, threeYears))
+        .to.be.revertedWithCustomError(taskMarket, "DeadlineTooFar");
+    });
+
+    it("should revert extendDeadline on COMPLETED task", async function () {
+      await taskMarket.connect(client).assignExecutor(1, executor.address);
+      await taskMarket.connect(executor).startWork(1);
+      await taskMarket.connect(executor).submitWork(1);
+      await taskMarket.connect(client).confirmCompletion(1);
+      await taskMarket.connect(executor).confirmCompletion(1);
+      await expect(taskMarket.connect(client).extendDeadline(1, deadline + DAY))
+        .to.be.revertedWithCustomError(taskMarket, "InvalidStatus");
+    });
+
+    it("should revert extendDeadline on CANCELLED task", async function () {
+      await taskMarket.connect(client).cancelTask(1);
+      await expect(taskMarket.connect(client).extendDeadline(1, deadline + DAY))
+        .to.be.revertedWithCustomError(taskMarket, "InvalidStatus");
+    });
+
+    it("should revert extendDeadline on DISPUTED task", async function () {
+      await taskMarket.connect(client).assignExecutor(1, executor.address);
+      await taskMarket.connect(executor).startWork(1);
+      await taskMarket.connect(executor).submitWork(1);
+      await taskMarket.connect(client).raiseDispute(1);
+      await expect(taskMarket.connect(client).extendDeadline(1, deadline + DAY))
+        .to.be.revertedWithCustomError(taskMarket, "InvalidStatus");
+    });
+
+    it("extended deadline enables executor to submit previously-missed work", async function () {
+      await taskMarket.connect(client).assignExecutor(1, executor.address);
+      await taskMarket.connect(executor).startWork(1);
+
+      // advance past original deadline
+      await provider.request({ method: "evm_increaseTime", params: [DAY + 120] });
+      await provider.request({ method: "evm_mine", params: [] });
+
+      await expect(taskMarket.connect(executor).submitWork(1))
+        .to.be.revertedWithCustomError(taskMarket, "DeadlinePassed");
+
+      // client extends by 2 more days from current block
+      const block = await ethers.provider.getBlock("latest");
+      const newDeadline = Number(block!.timestamp) + DAY * 2;
+      await taskMarket.connect(client).extendDeadline(1, newDeadline);
+
+      await expect(taskMarket.connect(executor).submitWork(1))
+        .to.emit(taskMarket, "TaskStatusChanged");
+    });
+  });
+
+  describe("raiseDispute from expired IN_PROGRESS", function () {
+    const DAY = 86400;
+    let snapshotId: string;
+
+    beforeEach(async function () {
+      snapshotId = (await provider.request({ method: "evm_snapshot", params: [] })) as string;
+    });
+
+    afterEach(async function () {
+      await provider.request({ method: "evm_revert", params: [snapshotId] });
+    });
+
+    async function setupExpiredInProgress() {
+      const block = await ethers.provider.getBlock("latest");
+      const deadline = Number(block!.timestamp) + DAY + 60;
+      await taskMarket.connect(client).createTask(deadline, METADATA_HASH, { value: ONE_ETH });
+      await taskMarket.connect(client).assignExecutor(1, executor.address);
+      await taskMarket.connect(executor).startWork(1);
+      // advance past deadline
+      await provider.request({ method: "evm_increaseTime", params: [DAY + 120] });
+      await provider.request({ method: "evm_mine", params: [] });
+    }
+
+    it("executor can raise dispute from expired IN_PROGRESS", async function () {
+      await setupExpiredInProgress();
+      await expect(taskMarket.connect(executor).raiseDispute(1))
+        .to.emit(taskMarket, "TaskDisputed").withArgs(1, executor.address);
+      expect((await taskMarket.getTask(1)).status).to.equal(5n); // Disputed
+    });
+
+    it("client can raise dispute from expired IN_PROGRESS", async function () {
+      await setupExpiredInProgress();
+      await expect(taskMarket.connect(client).raiseDispute(1))
+        .to.emit(taskMarket, "TaskDisputed").withArgs(1, client.address);
+      expect((await taskMarket.getTask(1)).status).to.equal(5n);
+    });
+
+    it("non-participant cannot raise dispute from expired IN_PROGRESS", async function () {
+      await setupExpiredInProgress();
+      await expect(taskMarket.connect(other).raiseDispute(1))
+        .to.be.revertedWithCustomError(taskMarket, "NotParticipant");
+    });
+
+    it("should revert raiseDispute from expired ASSIGNED (not InProgress)", async function () {
+      const block = await ethers.provider.getBlock("latest");
+      const deadline = Number(block!.timestamp) + DAY + 60;
+      await taskMarket.connect(client).createTask(deadline, METADATA_HASH, { value: ONE_ETH });
+      await taskMarket.connect(client).assignExecutor(1, executor.address);
+      // advance past deadline (still ASSIGNED, not IN_PROGRESS)
+      await provider.request({ method: "evm_increaseTime", params: [DAY + 120] });
+      await provider.request({ method: "evm_mine", params: [] });
+
+      await expect(taskMarket.connect(executor).raiseDispute(1))
+        .to.be.revertedWithCustomError(taskMarket, "InvalidStatus");
+    });
+
+    it("after raiseDispute, cancelTask reverts (task is DISPUTED)", async function () {
+      await setupExpiredInProgress();
+      await taskMarket.connect(executor).raiseDispute(1);
+      // task is now DISPUTED → cancelTask sees neither Open nor expiredActive
+      await expect(taskMarket.connect(client).cancelTask(1))
+        .to.be.revertedWithCustomError(taskMarket, "DeadlineNotExpired");
+    });
+
+    it("non-expired IN_PROGRESS cannot raise dispute", async function () {
+      const block = await ethers.provider.getBlock("latest");
+      const deadline = Number(block!.timestamp) + DAY + 60;
+      await taskMarket.connect(client).createTask(deadline, METADATA_HASH, { value: ONE_ETH });
+      await taskMarket.connect(client).assignExecutor(1, executor.address);
+      await taskMarket.connect(executor).startWork(1);
+      // deadline has NOT passed yet
+      await expect(taskMarket.connect(executor).raiseDispute(1))
+        .to.be.revertedWithCustomError(taskMarket, "InvalidStatus");
     });
   });
 });

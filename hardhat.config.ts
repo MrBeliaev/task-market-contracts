@@ -29,4 +29,9 @@ export default defineConfig({
       accounts: [configVariable("DEPLOYER_PRIVATE_KEY")],
     },
   },
+  verify: {
+    etherscan: {
+      apiKey: configVariable("ETHERSCAN_API_KEY"),
+    },
+  },
 });

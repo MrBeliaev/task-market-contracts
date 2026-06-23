@@ -9,6 +9,8 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 contract TaskMarket is Initializable, AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuard {
 
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
+    // max extension cap: 2 years from block.timestamp
+    uint256 public constant MAX_DEADLINE_EXTENSION = 730 days;
 
     uint256 public taskCount;
     uint256 public pendingFees;
@@ -28,6 +30,11 @@ contract TaskMarket is Initializable, AccessControlUpgradeable, UUPSUpgradeable,
         Cancelled
     }
 
+    // Storage layout (4 slots total):
+    // slot 0: uint256 id
+    // slot 1: address client (20) + uint96 reward (12)
+    // slot 2: address executor (20) + Status (1) + bool (1) + bool (1) + uint16 feeBps (2) + uint32 deadline (4) = 29 bytes
+    // slot 3: bytes32 metadataHash
     struct Task {
         uint256 id;
         address client;
@@ -36,8 +43,8 @@ contract TaskMarket is Initializable, AccessControlUpgradeable, UUPSUpgradeable,
         Status  status;
         bool    clientConfirmed;
         bool    executorConfirmed;
+        uint16  feeBps;      // captured at creation to protect from fee changes
         uint32  deadline;
-        uint32  createdAt;
         bytes32 metadataHash;
     }
 
@@ -59,6 +66,8 @@ contract TaskMarket is Initializable, AccessControlUpgradeable, UUPSUpgradeable,
     error NothingToWithdraw();
     error CannotRenounceAdminRole();
     error AdminIsParticipant();
+    error DeadlineNotExpired();
+    error NewDeadlineTooEarly();
 
     event TaskCreated(uint256 indexed taskId, address indexed client, uint256 reward, uint256 deadline, bytes32 metadataHash);
     event TaskAssigned(uint256 indexed taskId, address indexed executor);
@@ -66,8 +75,9 @@ contract TaskMarket is Initializable, AccessControlUpgradeable, UUPSUpgradeable,
     event CompletionConfirmed(uint256 indexed taskId, address indexed confirmer, bool clientConfirmed, bool executorConfirmed);
     event TaskCompleted(uint256 indexed taskId, address indexed executor, uint256 payout, uint256 fee);
     event TaskCancelled(uint256 indexed taskId);
+    event DeadlineExtended(uint256 indexed taskId, uint256 oldDeadline, uint256 newDeadline);
     event TaskDisputed(uint256 indexed taskId, address indexed disputedBy);
-    event DisputeResolved(uint256 indexed taskId, address indexed resolvedBy, uint256 clientRefund, uint256 executorPayout);
+    event DisputeResolved(uint256 indexed taskId, address indexed resolvedBy, uint256 clientRefund, uint256 executorPayout, uint256 fee);
     event FeeBpsUpdated(uint256 oldBps, uint256 newBps);
     event FeeRecipientUpdated(address indexed oldRecipient, address indexed newRecipient);
     event Withdrawn(address indexed recipient, uint256 amount);
@@ -90,7 +100,7 @@ contract TaskMarket is Initializable, AccessControlUpgradeable, UUPSUpgradeable,
         emit FeeRecipientUpdated(address(0), _feeRecipient);
     }
 
-    function _authorizeUpgrade(address) internal override onlyRole(DEFAULT_ADMIN_ROLE) {}
+    function _authorizeUpgrade(address newImplementation) internal override onlyRole(DEFAULT_ADMIN_ROLE) {}
 
     modifier onlyClient(uint256 _taskId) {
         if (tasks[_taskId].client != msg.sender) revert NotClient();
@@ -112,7 +122,7 @@ contract TaskMarket is Initializable, AccessControlUpgradeable, UUPSUpgradeable,
         if (msg.value == 0)               revert InsufficientReward();
         if (msg.value > type(uint96).max) revert RewardTooLarge();
         if (_deadline <= block.timestamp) revert DeadlinePassed();
-        if (_deadline > type(uint32).max) revert DeadlineTooFar();
+        if (_deadline > block.timestamp + MAX_DEADLINE_EXTENSION) revert DeadlineTooFar();
 
         uint256 taskId = ++taskCount;
         tasks[taskId] = Task({
@@ -121,7 +131,7 @@ contract TaskMarket is Initializable, AccessControlUpgradeable, UUPSUpgradeable,
             executor:          address(0),
             reward:            uint96(msg.value),
             deadline:          uint32(_deadline),
-            createdAt:         uint32(block.timestamp),
+            feeBps:            platformFeeBps,
             metadataHash:      _metadataHash,
             status:            Status.Open,
             clientConfirmed:   false,
@@ -146,22 +156,46 @@ contract TaskMarket is Initializable, AccessControlUpgradeable, UUPSUpgradeable,
         emit TaskStatusChanged(_taskId, prev, Status.Assigned);
     }
 
-    function cancelTask(
-        uint256 _taskId
-    ) external onlyClient(_taskId) inStatus(_taskId, Status.Open) nonReentrant {
+    function cancelTask(uint256 _taskId) external onlyClient(_taskId) nonReentrant {
         Task storage task = tasks[_taskId];
-        Status prev = task.status;
-        task.status = Status.Cancelled;
+        Status current = task.status;
 
+        bool isOpen = current == Status.Open;
+        bool isExpiredActive = block.timestamp > task.deadline &&
+            (current == Status.Assigned || current == Status.InProgress);
+
+        if (!isOpen && !isExpiredActive) revert DeadlineNotExpired();
+
+        Status prev = current;
+        task.status = Status.Cancelled;
         emit TaskCancelled(_taskId);
         emit TaskStatusChanged(_taskId, prev, Status.Cancelled);
-        _transfer(task.client, task.reward);
+        pendingWithdrawals[task.client] += task.reward;
+    }
+
+    function extendDeadline(uint256 _taskId, uint256 _newDeadline) external onlyClient(_taskId) {
+        Task storage task = tasks[_taskId];
+        Status current = task.status;
+
+        if (
+            current == Status.Completed ||
+            current == Status.Cancelled ||
+            current == Status.Disputed
+        ) revert InvalidStatus(current, Status.Open);
+
+        if (_newDeadline <= task.deadline) revert NewDeadlineTooEarly();
+        if (_newDeadline > block.timestamp + MAX_DEADLINE_EXTENSION) revert DeadlineTooFar();
+
+        uint256 oldDeadline = task.deadline;
+        task.deadline = uint32(_newDeadline);
+        emit DeadlineExtended(_taskId, oldDeadline, _newDeadline);
     }
 
     function startWork(
         uint256 _taskId
     ) external onlyExecutor(_taskId) inStatus(_taskId, Status.Assigned) {
         Task storage task = tasks[_taskId];
+        if (block.timestamp > task.deadline) revert DeadlinePassed();
         Status prev = task.status;
         task.status = Status.InProgress;
         emit TaskStatusChanged(_taskId, prev, Status.InProgress);
@@ -199,13 +233,17 @@ contract TaskMarket is Initializable, AccessControlUpgradeable, UUPSUpgradeable,
         }
     }
 
-    function raiseDispute(
-        uint256 _taskId
-    ) external inStatus(_taskId, Status.UnderReview) {
+    function raiseDispute(uint256 _taskId) external {
         Task storage task = tasks[_taskId];
         if (msg.sender != task.client && msg.sender != task.executor) revert NotParticipant();
 
-        Status prev = task.status;
+        Status current = task.status;
+        bool isUnderReview      = current == Status.UnderReview;
+        bool isExpiredInProgress = current == Status.InProgress && block.timestamp > task.deadline;
+
+        if (!isUnderReview && !isExpiredInProgress) revert InvalidStatus(current, Status.UnderReview);
+
+        Status prev = current;
         task.status = Status.Disputed;
         emit TaskDisputed(_taskId, msg.sender);
         emit TaskStatusChanged(_taskId, prev, Status.Disputed);
@@ -223,13 +261,16 @@ contract TaskMarket is Initializable, AccessControlUpgradeable, UUPSUpgradeable,
         Status prev = task.status;
         task.status = Status.Completed;
 
-        uint256 clientRefund   = (uint256(task.reward) * _clientBps) / 10000;
-        uint256 executorPayout = uint256(task.reward) - clientRefund;
+        uint256 fee           = (uint256(task.reward) * task.feeBps) / 10000;
+        uint256 remainder     = uint256(task.reward) - fee;
+        uint256 clientRefund   = (remainder * _clientBps) / 10000;
+        uint256 executorPayout = remainder - clientRefund;
 
-        emit DisputeResolved(_taskId, msg.sender, clientRefund, executorPayout);
+        emit DisputeResolved(_taskId, msg.sender, clientRefund, executorPayout, fee);
         emit TaskStatusChanged(_taskId, prev, Status.Completed);
 
-        if (clientRefund   > 0) pendingWithdrawals[task.client]   += clientRefund;
+        if (fee > 0)            pendingFees += fee;
+        if (clientRefund > 0)   pendingWithdrawals[task.client]   += clientRefund;
         if (executorPayout > 0) pendingWithdrawals[task.executor] += executorPayout;
     }
 
@@ -285,15 +326,13 @@ contract TaskMarket is Initializable, AccessControlUpgradeable, UUPSUpgradeable,
         Status prev = task.status;
         task.status = Status.Completed;
 
-        uint256 fee    = (uint256(task.reward) * platformFeeBps) / 10000;
+        uint256 fee    = (uint256(task.reward) * task.feeBps) / 10000;
         uint256 payout = uint256(task.reward) - fee;
 
         emit TaskCompleted(_taskId, task.executor, payout, fee);
         emit TaskStatusChanged(_taskId, prev, Status.Completed);
 
-        if (fee > 0) {
-            pendingFees += fee;
-        }
+        if (fee > 0) pendingFees += fee;
         pendingWithdrawals[task.executor] += payout;
     }
 
