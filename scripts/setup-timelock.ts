@@ -8,10 +8,10 @@
  *   PROXY_ADDRESS=0x... TIMELOCK_DELAY=172800 npx hardhat run scripts/setup-timelock.ts --network <net>
  *
  * Environment variables:
- *   PROXY_ADDRESS    — TaskMarket proxy address (required)
- *   TIMELOCK_DELAY   — Minimum delay in seconds (default: 172800 = 48 h)
- *   PROPOSER         — Address to add as TimelockController proposer
- *                      (defaults to deployer; replace with Gnosis Safe address for production)
+ *   PROXY_ADDRESS    TaskMarket proxy address (required)
+ *   TIMELOCK_DELAY   Minimum delay in seconds (default: 172800 = 48 h)
+ *   PROPOSER         Address to add as TimelockController proposer
+ *                    (defaults to deployer; replace with Gnosis Safe address for production)
  */
 
 import hre from "hardhat";
@@ -42,8 +42,8 @@ async function main() {
   const TimelockController = await ethers.getContractFactory("TimelockController");
   const timelock = await TimelockController.deploy(
     minDelay,
-    [proposer],       // proposers — who can queue upgrade operations
-    [],               // executors — empty array means anyone can execute after delay
+    [proposer],       // proposers: who can queue upgrade operations
+    [],               // executors: empty array means anyone can execute after delay
     deployer.address, // initial admin (revoked at the end of this script)
   );
   await timelock.waitForDeployment();
@@ -63,7 +63,7 @@ async function main() {
   const grantTx = await taskMarket.grantRole(DEFAULT_ADMIN_ROLE, timelockAddress);
   await grantTx.wait();
   const granted = await taskMarket.hasRole(DEFAULT_ADMIN_ROLE, timelockAddress);
-  if (!granted) throw new Error("Grant failed — aborting before revoking deployer role");
+  if (!granted) throw new Error("Grant failed, aborting before revoking deployer role");
 
   // ── 4. Revoke DEFAULT_ADMIN_ROLE from deployer ───────────────────────────────
   console.log("Revoking DEFAULT_ADMIN_ROLE from deployer…");
