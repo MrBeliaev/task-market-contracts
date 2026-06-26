@@ -1,14 +1,14 @@
-# TaskMarket — Smart Contract
+# TaskMarket: Smart Contract
 
 Decentralized task marketplace on EVM. Clients lock ETH in escrow; both parties must confirm completion before funds are released. Admins resolve disputes.
 
-The contract is **upgradeable** — deployed behind a UUPS (ERC-1967) proxy, so the logic can evolve without migrating escrowed funds or task data to a new address.
+The contract is **upgradeable**: deployed behind a UUPS (ERC-1967) proxy, so the logic can evolve without migrating escrowed funds or task data to a new address.
 
 ## Stack
 
 - Solidity 0.8.24 (EVM target: Paris)
 - Hardhat 3 + TypeScript (ESM)
-- OpenZeppelin Contracts v5 (`-upgradeable`: AccessControl, UUPS, Initializable; `ReentrancyGuard` from the base package — ERC-7201 namespaced storage)
+- OpenZeppelin Contracts v5 (`-upgradeable`: AccessControl, UUPS, Initializable; `ReentrancyGuard` from the base package, ERC-7201 namespaced storage)
 - `@openzeppelin/hardhat-upgrades` for proxy deployment, upgrades and storage-layout validation
 - TypeChain for typed contract bindings
 
@@ -23,7 +23,7 @@ npx hardhat test --gas-stats # same + per-function gas breakdown
 
 ## Deploy
 
-Deployment publishes the implementation contract and an ERC-1967 (UUPS) proxy in front of it, then calls `initialize(feeBps, feeRecipient)` through the proxy. Always interact with the **proxy address** — that's the contract's permanent address.
+Deployment publishes the implementation contract and an ERC-1967 (UUPS) proxy in front of it, then calls `initialize(feeBps, feeRecipient)` through the proxy. Always interact with the **proxy address**: that's the contract's permanent address.
 
 ```bash
 # Local node
@@ -58,7 +58,7 @@ await api.upgradeProxy(PROXY_ADDRESS, TaskMarketV2);
 
 The `@openzeppelin/hardhat-upgrades` plugin validates the new implementation for storage-layout compatibility and unsafe patterns (constructors, `selfdestruct`, `delegatecall`) before deploying it. Rules to keep in mind for any `V2`:
 
-- Never reorder, remove, or change the type of existing state variables — only **append** new ones at the end.
+- Never reorder, remove, or change the type of existing state variables. Only **append** new ones at the end.
 - Replace constructor logic with an `initializer`/`reinitializer(n)` function; never set initial values in field declarations.
 - If `V2` needs new initialization logic, expose it via `reinitializer(2)` (the original `initialize` can only run once).
 
@@ -105,7 +105,7 @@ Roles are managed via OpenZeppelin `AccessControl` (`grantRole` / `revokeRole`).
 
 | Function | Description |
 |----------|-------------|
-| `resolveDispute(taskId, clientBps)` | Split escrowed ETH by basis points (0–10000) |
+| `resolveDispute(taskId, clientBps)` | Split escrowed ETH by basis points (0-10000) |
 | `forceComplete(taskId)` | Force-complete a stuck task, pay executor in full |
 
 ### Owner (`DEFAULT_ADMIN_ROLE`)
@@ -144,9 +144,9 @@ Key properties:
 - State updated before external calls (CEI pattern)
 - Custom errors throughout for gas-efficient reverts
 - `inStatus` modifier enforces valid state transitions
-- Pull-payment pattern for executor/dispute payouts — no push-transfer failure can lock a task
+- Pull-payment pattern for executor/dispute payouts, so a push-transfer failure can't lock a task
 - Deadline enforced on both `startWork` and `submitWork`; admin cannot resolve a dispute they participate in
-- Implementation contract is locked via `_disableInitializers()` in its constructor — only the proxy can be initialized
+- Implementation contract is locked via `_disableInitializers()` in its constructor, so only the proxy can be initialized
 - Upgrades are gated behind `_authorizeUpgrade` with `onlyRole(DEFAULT_ADMIN_ROLE)`
 - `DEFAULT_ADMIN_ROLE` cannot be renounced (override blocks it); transfer to a new account is still possible
 
@@ -158,7 +158,7 @@ slither ./contracts/TaskMarket.sol \
   --solc-remaps "@openzeppelin/contracts-upgradeable=./node_modules/@openzeppelin/contracts-upgradeable @openzeppelin/contracts=./node_modules/@openzeppelin/contracts" \
   --solc-args "--evm-version cancun --include-path ./node_modules --base-path ."
 
-# Mythril symbolic execution (runtime bytecode — EIP-1153 opcodes not supported by Laser EVM)
+# Mythril symbolic execution (runtime bytecode: EIP-1153 opcodes not supported by Laser EVM)
 # First export runtime bytecode: python3 -c "import json; print(json.load(open('artifacts/contracts/TaskMarket.sol/TaskMarket.json'))['deployedBytecode'].lstrip('0x'))" > taskmarket.bin
 myth analyze -f taskmarket.bin --bin-runtime --execution-timeout 180
 
