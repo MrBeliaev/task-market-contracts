@@ -321,7 +321,7 @@ describe("TaskMarket", function () {
     });
   });
 
-  describe("Gas Optimization — Struct Packing", function () {
+  describe("Gas Optimization: Struct Packing", function () {
     it("should reject reward larger than uint96 max", async function () {
       const deadline = Math.floor(Date.now() / 1000) + 86400;
       const tooLarge = BigInt("0x10000000000000000000000000");
@@ -354,7 +354,7 @@ describe("TaskMarket", function () {
     });
   });
 
-  describe("Pending fees — feeRecipient failure recovery", function () {
+  describe("Pending fees: feeRecipient failure recovery", function () {
     it("should accumulate fees in pendingFees if feeRecipient reverts", async function () {
       const RejectETH = await ethers.deployContract("RejectETH");
       await taskMarket.connect(owner).setFeeRecipient(await RejectETH.getAddress());
@@ -749,7 +749,7 @@ describe("TaskMarket", function () {
     });
   });
 
-  describe("cancelTask — expired active tasks", function () {
+  describe("cancelTask: expired active tasks", function () {
     const DAY = 86400;
     let snapshotId: string;
 

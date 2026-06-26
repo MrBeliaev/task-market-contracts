@@ -125,7 +125,7 @@ contract TaskMarketEchidna {
         return ok;
     }
 
-    /// Every existing task's status must be a valid enum value (0–5).
+    /// Every existing task's status must be a valid enum value (0-5).
     function echidna_all_task_statuses_valid() external view returns (bool) {
         uint256 count = market.taskCount();
         for (uint256 i = 1; i <= count; i++) {
